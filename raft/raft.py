@@ -62,6 +62,7 @@ class RAFT(nn.Module):
     def __init__(self, args=SimpleNamespace()):
         super(RAFT, self).__init__()
         self.args = args
+        self.args.mixed_precision = getattr(args, 'mixed_precision', False)
 
         if getattr(args, 'small', False):
             self.hidden_dim = hdim = 96
