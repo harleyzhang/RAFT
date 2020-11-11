@@ -1,5 +1,6 @@
 *.pyc
 *.egg-info
+*.so
 dist
 datasets
 pytorch_env

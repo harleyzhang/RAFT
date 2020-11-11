@@ -31,6 +31,28 @@ You can demo a trained model on a sequence of frames
 python demo.py --model=models/raft-things.pth --path=demo-frames
 ```
 
+## Usage
+
+### installation
+```
+python setup.py install
+```
+
+Use RAFT as a torch module
+```
+import raft
+
+# construct raft_model
+raft_model = raft.RAFT()
+
+# construct raft model and load pretrained weight
+from types import SimpleNamespace
+args = SimpleNamespace()
+args.model = 'raft-sintel'
+raft_model = raft.RAFT(args)
+
+
+
 ## Required Data
 To evaluate/train RAFT, you will need to download the required datasets. 
 * [FlyingChairs](https://lmb.informatik.uni-freiburg.de/resources/datasets/FlyingChairs.en.html#flyingchairs)

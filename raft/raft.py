@@ -2,11 +2,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from types import SimpleNamespace
 
-from update import BasicUpdateBlock, SmallUpdateBlock
-from extractor import BasicEncoder, SmallEncoder
-from corr import CorrBlock, AlternateCorrBlock
-from utils.utils import bilinear_sampler, coords_grid, upflow8
+import os
+import urllib
+import zipfile
+
+from .update import BasicUpdateBlock, SmallUpdateBlock
+from .extractor import BasicEncoder, SmallEncoder
+from .corr import CorrBlock, AlternateCorrBlock
+from .utils.utils import bilinear_sampler, coords_grid, upflow8
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -21,31 +26,60 @@ except:
             pass
 
 
+url = 'https://www.dropbox.com/s/4j4z58wuv8o0mfz/models.zip'
+models_path = os.path.expanduser('~/.cache/raft')
+
+def load_pretrained_model(model, pretrained):
+  # check if pretrained is available
+  if (pretrained is None) or (pretrained == ''): return
+
+  if pretrained in ['raft-chairs', 'raft-kitti', 'raft-sintel', 'raft-small', 'raft-things']:
+    pretrained = os.path.join(models_path, 'models', pretrained+'.pth')
+    if not os.path.exists(pretrained):
+      os.system('wget '+url)
+
+      #tmp_fname, _ = urllib.request.urlretrieve(url)
+      tmp_fname = 'models.zip'
+      with open(tmp_fname, 'rb') as f:
+        models_zip = zipfile.ZipFile(f, 'r')
+        os.makedirs(models_path, exist_ok=True)
+        models_zip.extractall(models_path)
+
+  assert os.path.exists(pretrained), print(f'Pretrained model {pretrained} cannot be loaded')
+  pretrained_model = torch.load(pretrained)
+  pretrained_model = {k[7:] : v for k,v in pretrained_model.items()} # remove 'module.'
+  model.load_state_dict(pretrained_model)
+
 class RAFT(nn.Module):
-    def __init__(self, args):
+    '''
+    Arguments:
+        args.small
+        args.dropout
+        args.alternate_corr
+
+        args.model (str) : If given, load a pretrained model. If None or empty, load a random initialized model. If the model is not found, it will try to load the pretrained model from '~/.cache/raft/models'. If that directory is empty, it will download the pretrained model to that directory. 
+    '''
+    def __init__(self, args=SimpleNamespace()):
         super(RAFT, self).__init__()
         self.args = args
 
-        if args.small:
+        if getattr(args, 'small', False):
             self.hidden_dim = hdim = 96
             self.context_dim = cdim = 64
             args.corr_levels = 4
             args.corr_radius = 3
-        
         else:
             self.hidden_dim = hdim = 128
             self.context_dim = cdim = 128
             args.corr_levels = 4
             args.corr_radius = 4
 
-        if 'dropout' not in self.args:
-            self.args.dropout = 0
+        self.args.dropout = getattr(args, 'dropout', 0)
 
-        if 'alternate_corr' not in self.args:
-            self.args.alternate_corr = False
+        self.args.alternate_corr = getattr(args, 'alternate_corr', False)
 
         # feature network, context network, and update block
-        if args.small:
+        if getattr(args, 'small', False):
             self.fnet = SmallEncoder(output_dim=128, norm_fn='instance', dropout=args.dropout)        
             self.cnet = SmallEncoder(output_dim=hdim+cdim, norm_fn='none', dropout=args.dropout)
             self.update_block = SmallUpdateBlock(self.args, hidden_dim=hdim)
@@ -54,6 +88,10 @@ class RAFT(nn.Module):
             self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)        
             self.cnet = BasicEncoder(output_dim=hdim+cdim, norm_fn='batch', dropout=args.dropout)
             self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
+
+        # load pretrained network
+        load_pretrained_model(self, getattr(args, 'model', None))
+        
 
     def freeze_bn(self):
         for m in self.modules():
